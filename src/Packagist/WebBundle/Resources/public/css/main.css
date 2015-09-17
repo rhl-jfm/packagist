@@ -50,17 +50,10 @@ body {
 }
 .logo {
   position: absolute;
-  width: 100px;
+  width: 107px;
+  top: 0;
   left: -98px;
-  top: -43px;
 }
-@media (min-width: 1200px) {
-  .logo {
-    width: 80px;
-    left: -90px;
-  }
-}
-
 hr {
   border-color: #F28D1A;
 }
@@ -106,6 +99,7 @@ strong {
     padding: 12px 4px;
     line-height: 32px;
     margin: 0;
+    visibility: hidden;
 }
 
 .navbar .navbar-brand a {
