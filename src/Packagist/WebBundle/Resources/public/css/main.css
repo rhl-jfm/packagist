@@ -49,10 +49,11 @@ body {
     padding-top: 58px;
 }
 .logo {
-  position: absolute;
-  width: 107px;
-  top: 0;
-  left: -98px;
+    position: absolute;
+    width: 107px;
+    top: -107px;
+    left: -114px;
+    z-index: 100;
 }
 hr {
   border-color: #F28D1A;
