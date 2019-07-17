@@ -23,6 +23,7 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
  * @Route("/explore")
@@ -38,9 +39,9 @@ class ExploreController extends Controller
         /** @var PackageRepository $pkgRepo */
         $pkgRepo = $this->getDoctrine()->getRepository('PackagistWebBundle:Package');
         /** @var VersionRepository $verRepo */
-        $verRepo = $this->getDoctrine()->getRepository('PackagistWebBundle:Version');
+        $verRepo = $this->get('packagist.version_repository');
         $newSubmitted = $pkgRepo->getQueryBuilderForNewestPackages()->setMaxResults(10)
-            ->getQuery()->useResultCache(true, 900, 'new_submitted_packages')->getResult();
+            ->getQuery()->useResultCache(true, 900)->getResult();
         $newReleases = $verRepo->getLatestReleases(10);
         $randomIds = $this->getDoctrine()->getConnection()->fetchAll('SELECT id FROM package ORDER BY RAND() LIMIT 10');
         $random = $pkgRepo->createQueryBuilder('p')->where('p.id IN (:ids)')->setParameter('ids', $randomIds)->getQuery()->getResult();
@@ -49,7 +50,7 @@ class ExploreController extends Controller
             $popularIds = $this->get('snc_redis.default')->zrevrange('downloads:trending', 0, 9);
             if ($popularIds) {
                 $popular = $pkgRepo->createQueryBuilder('p')->where('p.id IN (:ids)')->setParameter('ids', $popularIds)
-                    ->getQuery()->useResultCache(true, 900, 'popular_packages')->getResult();
+                    ->getQuery()->useResultCache(true, 900)->getResult();
                 usort($popular, function ($a, $b) use ($popularIds) {
                     return array_search($a->getId(), $popularIds) > array_search($b->getId(), $popularIds) ? 1 : -1;
                 });
@@ -96,7 +97,7 @@ class ExploreController extends Controller
             );
             $popular = $this->getDoctrine()->getRepository('PackagistWebBundle:Package')
                 ->createQueryBuilder('p')->where('p.id IN (:ids)')->setParameter('ids', $popularIds)
-                ->getQuery()->useResultCache(true, 900, 'popular_packages')->getResult();
+                ->getQuery()->useResultCache(true, 900)->getResult();
             usort($popular, function ($a, $b) use ($popularIds) {
                 return array_search($a->getId(), $popularIds) > array_search($b->getId(), $popularIds) ? 1 : -1;
             });
@@ -121,7 +122,7 @@ class ExploreController extends Controller
 
             /** @var Package $package */
             foreach ($packages as $package) {
-                $url = $this->generateUrl('view_package', array('name' => $package->getName()), true);
+                $url = $this->generateUrl('view_package', array('name' => $package->getName()), UrlGeneratorInterface::ABSOLUTE_URL);
 
                 $result['packages'][] = array(
                     'name' => $package->getName(),
@@ -140,7 +141,7 @@ class ExploreController extends Controller
                 if ($perPage !== 15) {
                     $params['per_page'] = $perPage;
                 }
-                $result['next'] = $this->generateUrl('browse_popular', $params, true);
+                $result['next'] = $this->generateUrl('browse_popular', $params, UrlGeneratorInterface::ABSOLUTE_URL);
             }
 
             return new JsonResponse($result);

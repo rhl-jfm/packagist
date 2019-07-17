@@ -20,6 +20,7 @@ use Packagist\WebBundle\Form\Type\AddMaintainerRequestType;
 use Packagist\WebBundle\Form\Type\PackageType;
 use Packagist\WebBundle\Form\Type\RemoveMaintainerRequestType;
 use Predis\Connection\ConnectionException;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -90,7 +91,7 @@ class PackageController extends Controller
         } elseif ($req->query->get('vendor')) {
             $names = $repo->getPackageNamesByVendor($req->query->get('vendor'));
         } else {
-            $names = $repo->getPackageNames();
+            $names = $this->get('packagist.provider_manager')->getPackageNames();
         }
 
         return new JsonResponse(array('packageNames' => $names));
@@ -105,25 +106,27 @@ class PackageController extends Controller
         $package = new Package;
         $package->setEntityRepository($this->getDoctrine()->getRepository('PackagistWebBundle:Package'));
         $package->setRouter($this->get('router'));
-        $form = $this->createForm(new PackageType(), $package);
+        $form = $this->createForm(PackageType::class, $package, [
+            'action' => $this->generateUrl('submit'),
+        ]);
         $user = $this->getUser();
         $package->addMaintainer($user);
 
-        if ('POST' === $req->getMethod()) {
-            $form->bind($req);
-            if ($form->isValid()) {
-                try {
-                    $em = $this->getDoctrine()->getManager();
-                    $em->persist($package);
-                    $em->flush();
+        $form->handleRequest($req);
+        if ($form->isValid()) {
+            try {
+                $em = $this->getDoctrine()->getManager();
+                $em->persist($package);
+                $em->flush();
 
-                    $this->get('session')->getFlashBag()->set('success', $package->getName().' has been added to the package list, the repository will now be crawled.');
+                $this->get('packagist.provider_manager')->insertPackage($package);
 
-                    return new RedirectResponse($this->generateUrl('view_package', array('name' => $package->getName())));
-                } catch (\Exception $e) {
-                    $this->get('logger')->crit($e->getMessage(), array('exception', $e));
-                    $this->get('session')->getFlashBag()->set('error', $package->getName().' could not be saved.');
-                }
+                $this->get('session')->getFlashBag()->set('success', $package->getName().' has been added to the package list, the repository will now be crawled.');
+
+                return new RedirectResponse($this->generateUrl('view_package', array('name' => $package->getName())));
+            } catch (\Exception $e) {
+                $this->get('logger')->critical($e->getMessage(), array('exception', $e));
+                $this->get('session')->getFlashBag()->set('error', $package->getName().' could not be saved.');
             }
         }
 
@@ -142,50 +145,50 @@ class PackageController extends Controller
         $user = $this->getUser();
         $package->addMaintainer($user);
 
-        $response = array('status' => 'error', 'reason' => 'No data posted.');
-        if ('POST' === $req->getMethod()) {
-            $form->bind($req);
-            if ($form->isValid()) {
-                list(, $name) = explode('/', $package->getName(), 2);
+        $form->handleRequest($req);
+        if ($form->isValid()) {
+            list(, $name) = explode('/', $package->getName(), 2);
 
-                $existingPackages = $this->getDoctrine()
-                    ->getRepository('PackagistWebBundle:Package')
-                    ->createQueryBuilder('p')
-                    ->where('p.name LIKE ?0')
-                    ->setParameters(array('%/'.$name))
-                    ->getQuery()
-                    ->getResult();
+            $existingPackages = $this->getDoctrine()
+                ->getRepository('PackagistWebBundle:Package')
+                ->createQueryBuilder('p')
+                ->where('p.name LIKE ?0')
+                ->setParameters(array('%/'.$name))
+                ->getQuery()
+                ->getResult();
 
-                $similar = array();
+            $similar = array();
 
-                /** @var Package $existingPackage */
-                foreach ($existingPackages as $existingPackage) {
-                    $similar[] = array(
-                        'name' => $existingPackage->getName(),
-                        'url' => $this->generateUrl('view_package', array('name' => $existingPackage->getName()), true),
-                    );
+            /** @var Package $existingPackage */
+            foreach ($existingPackages as $existingPackage) {
+                $similar[] = array(
+                    'name' => $existingPackage->getName(),
+                    'url' => $this->generateUrl('view_package', array('name' => $existingPackage->getName()), true),
+                );
+            }
+
+            return new JsonResponse(array('status' => 'success', 'name' => $package->getName(), 'similar' => $similar));
+        }
+
+        if ($form->isSubmitted()) {
+            $errors = array();
+            if (count($form->getErrors())) {
+                foreach ($form->getErrors() as $error) {
+                    $errors[] = $error->getMessageTemplate();
                 }
-
-                $response = array('status' => 'success', 'name' => $package->getName(), 'similar' => $similar);
-            } else {
-                $errors = array();
-                if (count($form->getErrors())) {
-                    foreach ($form->getErrors() as $error) {
+            }
+            foreach ($form->all() as $child) {
+                if (count($child->getErrors())) {
+                    foreach ($child->getErrors() as $error) {
                         $errors[] = $error->getMessageTemplate();
                     }
                 }
-                foreach ($form->all() as $child) {
-                    if (count($child->getErrors())) {
-                        foreach ($child->getErrors() as $error) {
-                            $errors[] = $error->getMessageTemplate();
-                        }
-                    }
-                }
-                $response = array('status' => 'error', 'reason' => $errors);
             }
+
+            return new JsonResponse(array('status' => 'error', 'reason' => $errors));
         }
 
-        return new JsonResponse($response);
+        return new JsonResponse(array('status' => 'error', 'reason' => 'No data posted.'));
     }
 
     /**
@@ -196,9 +199,7 @@ class PackageController extends Controller
     {
         $packages = $this->getDoctrine()
             ->getRepository('PackagistWebBundle:Package')
-            ->createQueryBuilder('p')
-            ->where('p.name LIKE ?0')
-            ->setParameters(array($vendor.'/%'))
+            ->getFilteredQueryBuilder(['vendor' => $vendor.'/%'], true)
             ->getQuery()
             ->getResult();
 
@@ -235,7 +236,9 @@ class PackageController extends Controller
         if ($format === 'html') {
             $format = null;
         }
-
+        if ($format === 'json' || (!$format && substr($name, -5) === '.json')) {
+            throw new NotFoundHttpException('Package not found');
+        }
         if (false === strpos(trim($name, '/'), '/')) {
             return $this->redirect($this->generateUrl('view_vendor', array('vendor' => $name, '_format' => $format)));
         }
@@ -244,7 +247,6 @@ class PackageController extends Controller
     }
 
     /**
-     * @Template()
      * @Route(
      *     "/providers/{name}",
      *     name="view_providers",
@@ -253,7 +255,7 @@ class PackageController extends Controller
      * )
      * @Method({"GET"})
      */
-    public function viewProvidersAction(Request $req, $name)
+    public function viewProvidersAction($name)
     {
         /** @var PackageRepository $repo */
         $repo = $this->getDoctrine()->getRepository('PackagistWebBundle:Package');
@@ -297,12 +299,18 @@ class PackageController extends Controller
      */
     public function viewPackageAction(Request $req, $name)
     {
+        $req->getSession()->save();
+
+        if (preg_match('{^(?P<pkg>ext-[a-z0-9_.-]+?)/(?P<method>dependents|suggesters)$}i', $name, $match)) {
+            return $this->{$match['method'].'Action'}($req, $match['pkg']);
+        }
+
         /** @var PackageRepository $repo */
         $repo = $this->getDoctrine()->getRepository('PackagistWebBundle:Package');
 
         try {
             /** @var Package $package */
-            $package = $repo->findOneByName($name);
+            $package = $repo->getPartialPackageByNameWithVersions($name);
         } catch (NoResultException $e) {
             if ('json' === $req->getRequestFormat()) {
                 return new JsonResponse(array('status' => 'error', 'message' => 'Package not found'), 404);
@@ -316,7 +324,9 @@ class PackageController extends Controller
         }
 
         if ('json' === $req->getRequestFormat()) {
-            $data = $package->toArray();
+            $data = $package->toArray($this->getDoctrine()->getRepository('PackagistWebBundle:Version'));
+            $data['dependents'] = $repo->getDependentCount($package->getName());
+            $data['suggesters'] = $repo->getSuggestCount($package->getName());
 
             try {
                 $data['downloads'] = $this->get('packagist.download_manager')->getDownloads($package);
@@ -326,9 +336,12 @@ class PackageController extends Controller
                 $data['favers'] = null;
             }
 
-            // TODO invalidate cache on update and make the ttl longer
+            if (empty($data['versions'])) {
+                $data['versions'] = new \stdClass;
+            }
+
             $response = new JsonResponse(array('package' => $data));
-            $response->setSharedMaxAge(3600);
+            $response->setSharedMaxAge(12*3600);
 
             return $response;
         }
@@ -374,6 +387,7 @@ class PackageController extends Controller
         }
 
         $data['dependents'] = $repo->getDependentCount($package->getName());
+        $data['suggesters'] = $repo->getSuggestCount($package->getName());
 
         if ($maintainerForm = $this->createAddMaintainerForm($package)) {
             $data['addMaintainerForm'] = $maintainerForm->createView();
@@ -395,7 +409,6 @@ class PackageController extends Controller
     }
 
     /**
-     * @Template()
      * @Route(
      *     "/packages/{name}/downloads.{_format}",
      *     name="package_downloads_full",
@@ -410,7 +423,7 @@ class PackageController extends Controller
 
         try {
             /** @var $package Package */
-            $package = $repo->findOneByName($name);
+            $package = $repo->getPartialPackageByNameWithVersions($name);
         } catch (NoResultException $e) {
             if ('json' === $req->getRequestFormat()) {
                 return new JsonResponse(array('status' => 'error', 'message' => 'Package not found'), 404);
@@ -451,7 +464,6 @@ class PackageController extends Controller
     }
 
     /**
-     * @Template()
      * @Route(
      *     "/versions/{versionId}.{_format}",
      *     name="view_version",
@@ -461,6 +473,8 @@ class PackageController extends Controller
      */
     public function viewPackageVersionAction(Request $req, $versionId)
     {
+        $req->getSession()->save();
+
         /** @var VersionRepository $repo  */
         $repo = $this->getDoctrine()->getRepository('PackagistWebBundle:Version');
 
@@ -473,7 +487,6 @@ class PackageController extends Controller
     }
 
     /**
-     * @Template()
      * @Route(
      *     "/versions/{versionId}/delete",
      *     name="delete_version",
@@ -494,7 +507,7 @@ class PackageController extends Controller
             throw new AccessDeniedException;
         }
 
-        if (!$this->get('form.csrf_provider')->isCsrfTokenValid('delete_version', $req->request->get('_token'))) {
+        if (!$this->isCsrfTokenValid('delete_version', $req->request->get('_token'))) {
             throw new AccessDeniedException;
         }
 
@@ -506,7 +519,6 @@ class PackageController extends Controller
     }
 
     /**
-     * @Template()
      * @Route("/packages/{name}", name="update_package", requirements={"name"="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"}, defaults={"_format" = "json"})
      * @Method({"PUT"})
      */
@@ -589,7 +601,6 @@ class PackageController extends Controller
     }
 
     /**
-     * @Template()
      * @Route("/packages/{name}", name="delete_package", requirements={"name"="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"})
      * @Method({"DELETE"})
      */
@@ -601,7 +612,7 @@ class PackageController extends Controller
             /** @var Package $package */
             $package = $doctrine
                 ->getRepository('PackagistWebBundle:Package')
-                ->findOneByName($name);
+                ->getPartialPackageByNameWithVersions($name);
         } catch (NoResultException $e) {
             throw new NotFoundHttpException('The requested package, '.$name.', was not found.');
         }
@@ -609,7 +620,7 @@ class PackageController extends Controller
         if (!$form = $this->createDeletePackageForm($package)) {
             throw new AccessDeniedException;
         }
-        $form->bind($req->request->get('form'));
+        $form->submit($req->request->get('form'));
         if ($form->isValid()) {
             $req->getSession()->save();
 
@@ -623,6 +634,8 @@ class PackageController extends Controller
             $em = $doctrine->getManager();
             $em->remove($package);
             $em->flush();
+
+            $this->get('packagist.provider_manager')->deletePackage($package);
 
             // attempt solr cleanup
             try {
@@ -671,31 +684,29 @@ class PackageController extends Controller
             'show_add_maintainer_form' => true,
         );
 
-        if ('POST' === $req->getMethod()) {
-            $form->bind($req);
-            if ($form->isValid()) {
-                try {
-                    $em = $this->getDoctrine()->getManager();
-                    $user = $form->getData()->getUser();
+        $form->handleRequest($req);
+        if ($form->isValid()) {
+            try {
+                $em = $this->getDoctrine()->getManager();
+                $user = $form->getData()->getUser();
 
-                    if (!empty($user)) {
-                        if (!$package->getMaintainers()->contains($user)) {
-                            $package->addMaintainer($user);
-                            $this->get('packagist.package_manager')->notifyNewMaintainer($user, $package);
-                        }
-
-                        $em->persist($package);
-                        $em->flush();
-
-                        $this->get('session')->getFlashBag()->set('success', $user->getUsername().' is now a '.$package->getName().' maintainer.');
-
-                        return new RedirectResponse($this->generateUrl('view_package', array('name' => $package->getName())));
+                if (!empty($user)) {
+                    if (!$package->getMaintainers()->contains($user)) {
+                        $package->addMaintainer($user);
+                        $this->get('packagist.package_manager')->notifyNewMaintainer($user, $package);
                     }
-                    $this->get('session')->getFlashBag()->set('error', 'The user could not be found.');
-                } catch (\Exception $e) {
-                    $this->get('logger')->crit($e->getMessage(), array('exception', $e));
-                    $this->get('session')->getFlashBag()->set('error', 'The maintainer could not be added.');
+
+                    $em->persist($package);
+                    $em->flush();
+
+                    $this->get('session')->getFlashBag()->set('success', $user->getUsername().' is now a '.$package->getName().' maintainer.');
+
+                    return new RedirectResponse($this->generateUrl('view_package', array('name' => $package->getName())));
                 }
+                $this->get('session')->getFlashBag()->set('error', 'The user could not be found.');
+            } catch (\Exception $e) {
+                $this->get('logger')->critical($e->getMessage(), array('exception', $e));
+                $this->get('session')->getFlashBag()->set('error', 'The maintainer could not be added.');
             }
         }
 
@@ -729,30 +740,28 @@ class PackageController extends Controller
             'show_remove_maintainer_form' => true,
         );
 
-        if ('POST' === $req->getMethod()) {
-            $removeMaintainerForm->bind($req);
-            if ($removeMaintainerForm->isValid()) {
-                try {
-                    $em = $this->getDoctrine()->getManager();
-                    $user = $removeMaintainerForm->getData()->getUser();
+        $removeMaintainerForm->handleRequest($req);
+        if ($removeMaintainerForm->isValid()) {
+            try {
+                $em = $this->getDoctrine()->getManager();
+                $user = $removeMaintainerForm->getData()->getUser();
 
-                    if (!empty($user)) {
-                        if ($package->getMaintainers()->contains($user)) {
-                            $package->getMaintainers()->removeElement($user);
-                        }
-
-                        $em->persist($package);
-                        $em->flush();
-
-                        $this->get('session')->getFlashBag()->set('success', $user->getUsername().' is no longer a '.$package->getName().' maintainer.');
-
-                        return new RedirectResponse($this->generateUrl('view_package', array('name' => $package->getName())));
+                if (!empty($user)) {
+                    if ($package->getMaintainers()->contains($user)) {
+                        $package->getMaintainers()->removeElement($user);
                     }
-                    $this->get('session')->getFlashBag()->set('error', 'The user could not be found.');
-                } catch (\Exception $e) {
-                    $this->get('logger')->crit($e->getMessage(), array('exception', $e));
-                    $this->get('session')->getFlashBag()->set('error', 'The maintainer could not be removed.');
+
+                    $em->persist($package);
+                    $em->flush();
+
+                    $this->get('session')->getFlashBag()->set('success', $user->getUsername().' is no longer a '.$package->getName().' maintainer.');
+
+                    return new RedirectResponse($this->generateUrl('view_package', array('name' => $package->getName())));
                 }
+                $this->get('session')->getFlashBag()->set('error', 'The user could not be found.');
+            } catch (\Exception $e) {
+                $this->get('logger')->critical($e->getMessage(), array('exception', $e));
+                $this->get('session')->getFlashBag()->set('error', 'The maintainer could not be removed.');
             }
         }
 
@@ -774,26 +783,25 @@ class PackageController extends Controller
         }
 
         $form = $this->createFormBuilder($package, array("validation_groups" => array("Update")))
-            ->add("repository", "text")
+            ->add('repository', TextType::class)
+            ->setMethod('POST')
+            ->setAction($this->generateUrl('edit_package', ['name' => $package->getName()]))
             ->getForm();
 
-        if ($req->isMethod("POST")) {
-            $form->bind($req);
+        $form->handleRequest($req);
+        if ($form->isValid()) {
+            // Force updating of packages once the package is viewed after the redirect.
+            $package->setCrawledAt(null);
 
-            if ($form->isValid()) {
-                // Force updating of packages once the package is viewed after the redirect.
-                $package->setCrawledAt(null);
+            $em = $this->getDoctrine()->getManager();
+            $em->persist($package);
+            $em->flush();
 
-                $em = $this->getDoctrine()->getManager();
-                $em->persist($package);
-                $em->flush();
+            $this->get("session")->getFlashBag()->set("success", "Changes saved.");
 
-                $this->get("session")->getFlashBag()->set("success", "Changes saved.");
-
-                return $this->redirect(
-                    $this->generateUrl("view_package", array("name" => $package->getName()))
-                );
-            }
+            return $this->redirect(
+                $this->generateUrl("view_package", array("name" => $package->getName()))
+            );
         }
 
         return array(
@@ -815,19 +823,19 @@ class PackageController extends Controller
             throw new AccessDeniedException;
         }
 
-        $form = $this->createForm(new AbandonedType());
-        if ($request->getMethod() === 'POST') {
-            $form->bind($request->request->get('package'));
-            if ($form->isValid()) {
-                $package->setAbandoned(true);
-                $package->setReplacementPackage(str_replace('https://packagist.org/packages/', '', $form->get('replacement')->getData()));
-                $package->setIndexedAt(null);
+        $form = $this->createForm(AbandonedType::class);
+        $form->handleRequest($request);
+        if ($form->isValid()) {
+            $package->setAbandoned(true);
+            $package->setReplacementPackage(str_replace('https://packagist.org/packages/', '', $form->get('replacement')->getData()));
+            $package->setIndexedAt(null);
+            $package->setCrawledAt(new \DateTime());
+            $package->setUpdatedAt(new \DateTime());
 
-                $em = $this->getDoctrine()->getManager();
-                $em->flush();
+            $em = $this->getDoctrine()->getManager();
+            $em->flush();
 
-                return $this->redirect($this->generateUrl('view_package', array('name' => $package->getName())));
-            }
+            return $this->redirect($this->generateUrl('view_package', array('name' => $package->getName())));
         }
 
         return array(
@@ -852,6 +860,8 @@ class PackageController extends Controller
         $package->setAbandoned(false);
         $package->setReplacementPackage(null);
         $package->setIndexedAt(null);
+        $package->setCrawledAt(new \DateTime());
+        $package->setUpdatedAt(new \DateTime());
 
         $em = $this->getDoctrine()->getManager();
         $em->flush();
@@ -908,9 +918,8 @@ class PackageController extends Controller
      * @Route(
      *      "/packages/{name}/dependents",
      *      name="view_package_dependents",
-     *      requirements={"name"="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?"}
+     *      requirements={"name"="([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?|ext-[A-Za-z0-9_.-]+?)"}
      * )
-     * @Template()
      */
     public function dependentsAction(Request $req, $name)
     {
@@ -926,11 +935,41 @@ class PackageController extends Controller
         $paginator->setCurrentPage($page, false, true);
 
         $data['packages'] = $paginator;
+        $data['count'] = $depCount;
 
         $data['meta'] = $this->getPackagesMetadata($data['packages']);
         $data['name'] = $name;
 
-        return $data;
+        return $this->render('PackagistWebBundle:Package:dependents.html.twig', $data);
+    }
+
+    /**
+     * @Route(
+     *      "/packages/{name}/suggesters",
+     *      name="view_package_suggesters",
+     *      requirements={"name"="([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?|ext-[A-Za-z0-9_.-]+?)"}
+     * )
+     */
+    public function suggestersAction(Request $req, $name)
+    {
+        $page = $req->query->get('page', 1);
+
+        /** @var PackageRepository $repo */
+        $repo = $this->getDoctrine()->getRepository('PackagistWebBundle:Package');
+        $suggestCount = $repo->getSuggestCount($name);
+        $packages = $repo->getSuggests($name, ($page - 1) * 15, 15);
+
+        $paginator = new Pagerfanta(new FixedAdapter($suggestCount, $packages));
+        $paginator->setMaxPerPage(15);
+        $paginator->setCurrentPage($page, false, true);
+
+        $data['packages'] = $paginator;
+        $data['count'] = $suggestCount;
+
+        $data['meta'] = $this->getPackagesMetadata($data['packages']);
+        $data['name'] = $name;
+
+        return $this->render('PackagistWebBundle:Package:suggesters.html.twig', $data);
     }
 
     /**
@@ -1023,7 +1062,7 @@ class PackageController extends Controller
         return $this->overallStatsAction($req, $package, $version);
     }
 
-    private function createAddMaintainerForm($package)
+    private function createAddMaintainerForm(Package $package)
     {
         if (!$user = $this->getUser()) {
             return;
@@ -1031,7 +1070,7 @@ class PackageController extends Controller
 
         if ($this->isGranted('ROLE_EDIT_PACKAGES') || $package->getMaintainers()->contains($user)) {
             $maintainerRequest = new MaintainerRequest();
-            return $this->createForm(new AddMaintainerRequestType(), $maintainerRequest);
+            return $this->createForm(AddMaintainerRequestType::class, $maintainerRequest);
         }
     }
 
@@ -1043,7 +1082,9 @@ class PackageController extends Controller
 
         if ($this->isGranted('ROLE_EDIT_PACKAGES') || $package->getMaintainers()->contains($user)) {
             $maintainerRequest = new MaintainerRequest();
-            return $this->createForm(new RemoveMaintainerRequestType(), $maintainerRequest, array('package'=>$package));
+            return $this->createForm(RemoveMaintainerRequestType::class, $maintainerRequest, array(
+                'package' => $package,
+            ));
         }
     }
 

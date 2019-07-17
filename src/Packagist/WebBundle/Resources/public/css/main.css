@@ -29,14 +29,17 @@ html, body {
 
 pre, code {
     background: #fff;
-    font-family: Consolas, "Courier New", Courier, monospace;
+    font-family: "Source Code Pro", Menlo, Consolas, "Courier New", Courier, monospace;
     border-radius: 0;
     border: none;
     color: #2d2d32;
+    line-height: 12px;
+    font-size: 12px;
 }
 pre {
-  border-left: 2px solid #2d2d32;
+  border-left: 2px solid #f28d1a;
 }
+code.hljs { display: inline; }
 
 label {
   display: block;
@@ -572,7 +575,11 @@ input:focus:invalid:focus, textarea:focus:invalid:focus, select:focus:invalid:fo
     color: rgb(82, 168, 236);
 }
 
-ul.packages h1 {
+.packages {
+    margin-top: 20px;
+}
+
+.packages h1 {
   font-family: Verdana;
   font-size: 22px;
   line-height: 1em;
@@ -585,20 +592,20 @@ ul.packages h1 {
   white-space: nowrap;
 }
 
-ul.packages .metadata {
+.packages .metadata {
   color: #555;
   font-size: 15px;
 }
-ul.packages .metadata .glyphicon {
+.packages .metadata .glyphicon {
   top: 3px;
   margin: 0 1px;
   font-size: 18px;
 }
-ul.packages .metadata-block {
+.packages .metadata-block {
   display: block;
   margin-bottom: 10px;
 }
-ul.packages .metadata-block:last-child {
+.packages .metadata-block:last-child {
   margin-bottom: 0;
 }
 
@@ -903,12 +910,12 @@ ul.packages .metadata-block:last-child {
   margin-top: 3px;
   margin-bottom: 7px;
   float: right;
-  font-size: 14px;
+  font-size: 34px;
 }
 .package .details #remove-maintainer {
   float: right;
-  clear: right;
-  font-size: 14px;
+  font-size: 35px;
+  margin-top: 5px;
 }
 .package .details .canonical {
   text-overflow: ellipsis;
@@ -947,8 +954,6 @@ ul.packages .metadata-block:last-child {
 
 .package .readme {
   padding-bottom: 20px;
-  max-height: 300px;
-  overflow-y: hidden;
 }
 .wrapper .content .package .readme img {
   max-width: 100%;
@@ -984,6 +989,21 @@ ul.packages .metadata-block:last-child {
   line-height: 100%;
 }
 
+.wrapper .content .package .readme table {
+  margin: 0 0 15px;
+}
+.wrapper .content .package .readme th,
+.wrapper .content .package .readme td {
+  border: 1px solid #CCC;
+  padding: 5px 10px;
+}
+.wrapper .content .package .readme th {
+  background: #EEE;
+}
+.wrapper .content .package .readme table code {
+  font-size: 13px;
+}
+
 .package .package-aside {
   border-top: 1px solid #f28d1a;
   border-radius: 0;
@@ -998,10 +1018,10 @@ ul.packages .metadata-block:last-child {
 .package-aside .details {
   padding-left: 0;
 }
-.package .package-aside i, .package .readme-expander i {
+.package .package-aside i {
   color: #bbbfc4;
 }
-.package .package-aside i:hover, .package .readme-expander i:hover {
+.package .package-aside i:hover {
   color: #a5aab0;
 }
 
@@ -1025,15 +1045,11 @@ ul.packages .metadata-block:last-child {
   padding: 0;
   margin: 0;
 }
-.package .versions-expander, .package .readme-expander {
+.package .versions-expander {
   text-align: center;
   cursor: pointer;
   margin: 10px 0 0;
   line-height: 25px;
-}
-.package .readme-expander {
-  margin-bottom: 20px;
-  background: #fff;
 }
 .package .versions .version {
   padding: 2px 0 2px 5px;
@@ -1212,6 +1228,11 @@ ul.packages .metadata-block:last-child {
     }
 }
 
+#pagination-container {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
 .pagination {
     margin: 6px 0;
 }
@@ -1219,21 +1240,26 @@ ul.packages .metadata-block:last-child {
 .pagination ul {
     list-style: none;
     margin: 0;
+    padding-left: 0;
 }
 
 .pagination ul > li {
     float: left;
     line-height: 40px;
-    padding: 0 20px 0 0;
+    padding: 0;
 }
 
 .pagination ul > li > a, .pagination ul > li > span {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     height: 40px;
     text-align: center;
     text-decoration: none;
-    min-width: 20px;
+    padding: 0 10px;
+    display: inline-block;
+}
+.pagination ul > li > a:hover {
+    background: #F2F2F2;
 }
 
 .legend {

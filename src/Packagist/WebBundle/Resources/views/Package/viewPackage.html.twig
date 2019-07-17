@@ -10,6 +10,10 @@
     {{ parent() }}
 {% endblock %}
 
+{% block head_additions %}
+    <link rel="stylesheet" href="{{ asset('css/github/markdown.css') }}">
+{% endblock %}
+
 {% block scripts %}
     <script src="{{ asset('bundles/packagistweb/js/view.js')}}"></script>
 {% endblock %}
@@ -39,13 +43,13 @@
 
             <div class="row">
                 <div class="col-md-8">
-                    <p class="requireme"><i class="glyphicon glyphicon-save"></i> <input type="text" readonly="readonly" value="composer require {{ "#{package.vendor}/#{package.packageName}" }}" /></p>
+                    <p class="requireme"><i class="glyphicon glyphicon-save"></i> <input type="text" readonly="readonly" value="composer {% if package.type == 'project' %}create-project{% else %}require{% endif %} {{ "#{package.vendor}/#{package.packageName}" }}" /></p>
 
                     {% if not package.autoUpdated and app.user and (package.maintainers.contains(app.user) or is_granted('ROLE_UPDATE_PACKAGES')) %}
                         {% if "github.com" in package.repository %}
-                            <div class="alert alert-danger">This package is not auto-updated. Please set up the <a href="{{ path('fos_user_profile_show') }}">GitHub Service Hook</a> for Packagist so that it gets updated whenever you push!</div>
+                            <div class="alert alert-danger">This package is not auto-updated. Please set up the <a href="{{ path('about') }}#how-to-update-packages">GitHub Service Hook</a> for Packagist so that it gets updated whenever you push!</div>
                         {% elseif "bitbucket.org" in package.repository %}
-                            <div class="alert alert-danger">This package is not auto-updated. Please set up the <a href="{{ path('fos_user_profile_show') }}">BitBucket POST Service</a> for Packagist so that it gets updated whenever you push!</div>
+                            <div class="alert alert-danger">This package is not auto-updated. Please set up the <a href="{{ path('about') }}#how-to-update-packages">BitBucket Webhooks</a> for Packagist so that it gets updated whenever you push!</div>
                         {% endif %}
                     {% endif %}
 
@@ -53,7 +57,7 @@
                         <div class="alert alert-danger">
                             This package is <strong>abandoned</strong> and no longer maintained.
                             {% if package.replacementPackage is not empty %}
-                                The author suggests using the <a href="{{ path('view_package', {name: package.replacementPackage}) }}">{{ package.replacementPackage }}</a> package instead.
+                                The author suggests using the <a href="{{ '://' in package.replacementPackage ? package.replacementPackage : path('view_package', {name: package.replacementPackage}) }}">{{ package.replacementPackage }}</a> package instead.
                             {% else %}
                                 No replacement package was suggested.
                                 {% if (is_granted('ROLE_EDIT_PACKAGES') or package.maintainers.contains(app.user)) %}
@@ -66,6 +70,10 @@
                         and app.user and (package.maintainers.contains(app.user) or is_granted('ROLE_UPDATE_PACKAGES'))
                     %}
                         <div class="alert alert-danger">This package is in a broken state and will not update anymore. Some branches contain invalid data and until you fix them the entire package is frozen. Click "Force Update" above to see details.</div>
+                    {% endif %}
+
+                    {% if expandedVersion and not expandedVersion.license %}
+                        <div class="alert alert-danger">There is no license information available for the latest version ({{ expandedVersion.version }}) of this package.</div>
                     {% endif %}
 
                     <p class="description">{{ package.description }}</p>
@@ -111,8 +119,8 @@
                                     <a href="{{ path('user_profile', {'name': maintainer.username}) }}"><img width="48" height="48" title="{{ maintainer.username }}" src="//www.gravatar.com/avatar/{{ maintainer.email|gravatar_hash }}?s=48&amp;d=identicon"></a>
                                 {% endfor %}
                                 {% if addMaintainerForm is defined or removeMaintainerForm is defined %}
-                                    {% if addMaintainerForm is defined %}<a id="add-maintainer" href="{{ path('add_maintainer', {'name': package.name}) }}"><i class="glyphicon glyphicon-plus"></i></a>{% endif %}
-                                    {% if removeMaintainerForm is defined %}<a id="remove-maintainer" href="{{ path('remove_maintainer', {'name': package.name}) }}"><i class="glyphicon glyphicon-remove"></i></a>{% endif %}
+                                    {% if removeMaintainerForm is defined %}<a title="Remove Maintainer" id="remove-maintainer" href="{{ path('remove_maintainer', {'name': package.name}) }}"><i class="glyphicon glyphicon-remove"></i></a>{% endif %}
+                                    {% if addMaintainerForm is defined %}<a title="Add Maintainer" id="add-maintainer" href="{{ path('add_maintainer', {'name': package.name}) }}"><i class="glyphicon glyphicon-plus"></i></a>{% endif %}
                                 {% endif %}
                             </p>
 
@@ -145,13 +153,65 @@
                         </div>
 
                         <div class="facts col-xs-12 col-sm-6 col-md-12">
-                            <p><span><a href="{{ path('view_package_stats', {name: package.name}) }}" rel="nofollow">Installs</a>:</span> {% if downloads.total is defined %}{{ downloads.total|number_format(0, '.', '&#8201;')|raw }}{% else %}N/A{% endif %}</p>
-                            {% if dependents is defined %}<p><span><a href="{{ path('view_package_dependents', {name: package.name}) }}" rel="nofollow">Dependents</a>:</span> {{ dependents|number_format(0, '.', '&#8201;')|raw }}</p>{% endif %}
-                            {% if package.gitHubStars is not null %}<p><span>Stars:</span> {{ package.gitHubStars|number_format(0, '.', '&#8201;')|raw }}</p>{% endif %}
-                            {% if package.gitHubWatches is not null %}<p><span>Watchers:</span> {{ package.gitHubWatches|number_format(0, '.', '&#8201;')|raw }}</p>{% endif %}
-                            {% if package.gitHubForks is not null %}<p><span>Forks:</span> {{ package.gitHubForks|number_format(0, '.', '&#8201;')|raw }}</p>{% endif %}
-                            {% if package.gitHubOpenIssues is not null %}<p><span>Open Issues:</span> {{ package.gitHubOpenIssues|number_format(0, '.', '&#8201;')|raw }}</p>{% endif %}
-                            {% if package.language is not empty %}<p><span>Language:</span> {{ package.language }}</p>{% endif %}
+                            <p>
+                                <span>
+                                    <a href="{{ path('view_package_stats', {name: package.name}) }}" rel="nofollow">Installs</a>:
+                                </span>
+                                {% if downloads.total is defined %}{{ downloads.total|number_format(0, '.', '&#8201;')|raw }}{% else %}N/A{% endif %}
+                            </p>
+                            {% if dependents is defined %}
+                                <p>
+                                    <span>
+                                        <a href="{{ path('view_package_dependents', {name: package.name}) }}" rel="nofollow">Dependents</a>:
+                                    </span>
+                                    {{ dependents|number_format(0, '.', '&#8201;')|raw }}
+                                </p>
+                            {% endif %}
+                            {% if suggesters is defined %}
+                                <p>
+                                    <span>
+                                        <a href="{{ path('view_package_suggesters', {name: package.name}) }}" rel="nofollow">Suggesters</a>:
+                                    </span>
+                                    {{ suggesters|number_format(0, '.', '&#8201;')|raw }}
+                                </p>
+                            {% endif %}
+                            {% if package.gitHubStars is not null %}
+                                <p>
+                                    <span>
+                                        <a href="{{ repoUrl }}/stargazers">Stars</a>:
+                                    </span>
+                                    {{ package.gitHubStars|number_format(0, '.', '&#8201;')|raw }}
+                                </p>
+                            {% endif %}
+                            {% if package.gitHubWatches is not null %}
+                                <p>
+                                    <span>
+                                        <a href="{{ repoUrl }}/watchers">Watchers</a>:
+                                    </span> {{ package.gitHubWatches|number_format(0, '.', '&#8201;')|raw }}
+                                </p>
+                            {% endif %}
+                            {% if package.gitHubForks is not null %}
+                                <p>
+                                    <span>
+                                        <a href="{{ repoUrl }}/network">Forks</a>:
+                                    </span>
+                                    {{ package.gitHubForks|number_format(0, '.', '&#8201;')|raw }}
+                                </p>
+                            {% endif %}
+                            {% if version and version.support is not null and version.support.issues is defined and version.support.issues starts with 'https://github.com/' and version.support.issues starts with repoUrl %}
+                                <p>
+                                    <span>
+                                        <a href="{{ version.support.issues }}">Open Issues</a>:
+                                    </span>
+                                    {{ package.gitHubOpenIssues|number_format(0, '.', '&#8201;')|raw }}
+                                </p>
+                            {% endif %}
+                            {% if package.language is not empty and package.language != 'PHP' %}
+                                <p><span>Language:</span>{{ package.language }}</p>
+                            {% endif %}
+                            {% if package.type is not empty and package.type != 'library' %}
+                                <p><span>Type:</span>{{ package.type }}</p>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -160,7 +220,10 @@
             {% if addMaintainerForm is defined or removeMaintainerForm is defined %}
                 <div class="row">
                     {% if addMaintainerForm is defined %}
-                        <form id="add-maintainer-form" class="col-sm-6 col-md-3 col-md-offset-9 {{ show_add_maintainer_form|default(false) ? '': 'hidden' }}" action="{{ path('add_maintainer', {'name': package.name}) }}" method="POST" {{ form_enctype(addMaintainerForm) }}>
+                        {{ form_start(addMaintainerForm, {
+                            attr: { id: 'add-maintainer-form', class: 'col-sm-6 col-md-3 col-md-offset-9 ' ~ (show_add_maintainer_form|default(false) ? '': 'hidden') },
+                            action: path('add_maintainer', { 'name': package.name })
+                        }) }}
                             <div>
                                 <h4>Add Maintainer</h4>
                                 <p>
@@ -171,11 +234,14 @@
                                 {{ form_rest(addMaintainerForm) }}
                                 <input class="btn btn-block btn-success btn-lg" type="submit" value="Add Maintainer" />
                             </div>
-                        </form>
+                        {{ form_end(addMaintainerForm) }}
                     {% endif %}
 
                     {% if removeMaintainerForm is defined %}
-                        <form id="remove-maintainer-form" class="col-sm-6 col-md-3 col-md-offset-9 {{ show_remove_maintainer_form|default(false) ? '': 'hidden' }}" action="{{ path('remove_maintainer', {'name': package.name}) }}" method="POST" {{ form_enctype(removeMaintainerForm) }}>
+                        {{ form_start(removeMaintainerForm, {
+                            attr: { id: 'remove-maintainer-form', class: 'col-sm-6 col-md-3 col-md-offset-9 ' ~ (show_remove_maintainer_form|default(false) ? '': 'hidden') },
+                            action: path('remove_maintainer', { 'name': package.name })
+                        }) }}
                             <div>
                                 <h4>Remove Maintainer</h4>
                                 <p>
@@ -186,7 +252,7 @@
                                 {{ form_rest(removeMaintainerForm) }}
                                 <input class="btn btn-block btn-danger btn-lg" type="submit" value="Remove Maintainer" />
                             </div>
-                        </form>
+                        {{ form_end(removeMaintainerForm) }}
                     {% endif %}
                 </div>
             {% endif %}
@@ -208,12 +274,9 @@
 
         {% if package.readme != null %}
             <hr class="clearfix">
-            <div class="readme">
+            <div class="readme markdown-body">
                 <h1>README</h1>
                 {{ package.readme|raw }}
-            </div>
-            <div class="hidden readme-expander">
-                <i class="glyphicon glyphicon-chevron-down"></i>
             </div>
         {% endif %}
     </div>

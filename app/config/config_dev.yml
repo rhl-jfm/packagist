@@ -1,8 +1,12 @@
 imports:
     - { resource: config.yml }
 
+doctrine:
+    orm:
+        result_cache_driver: array
+
 framework:
-    router:   { resource: "%kernel.root_dir%/config/routing_dev.yml" }
+    router:   { resource: '%kernel.root_dir%/config/routing_dev.yml' }
     profiler: { only_exceptions: false }
 
 swiftmailer:
@@ -16,8 +20,9 @@ monolog:
     handlers:
         main:
             type:  stream
-            path:  %kernel.logs_dir%/%kernel.environment%.log
+            path:  '%kernel.logs_dir%/%kernel.environment%.log'
             level: debug
+            channels: ['!event']
         firephp:
             type:  firephp
             level: info

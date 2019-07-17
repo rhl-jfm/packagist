@@ -18,6 +18,7 @@ use Symfony\Bridge\Doctrine\RegistryInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Finder\Finder;
 use Packagist\WebBundle\Entity\Version;
+use Doctrine\DBAL\Connection;
 
 /**
  * @author Jordi Boggiano <j.boggiano@seld.be>
@@ -183,6 +184,10 @@ class SymlinkDumper
             }
         }
 
+        $dumpTimeUpdates = [];
+
+        $versionRepo = $this->doctrine->getRepository('PackagistWebBundle:Version');
+
         try {
             $modifiedIndividualFiles = array();
 
@@ -221,6 +226,11 @@ class SymlinkDumper
                     }
 
                     // (re)write versions in individual files
+                    $versionIds = [];
+                    foreach ($package->getVersions() as $version) {
+                        $versionIds[] = $version->getId();
+                    }
+                    $versionData = $versionRepo->getVersionData($versionIds);
                     foreach ($package->getVersions() as $version) {
                         foreach (array_slice($version->getNames(), 0, 150) as $versionName) {
                             if (!preg_match('{^[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_-][A-Za-z0-9_.-]*$}', $versionName) || strpos($versionName, '..')) {
@@ -229,7 +239,7 @@ class SymlinkDumper
 
                             $file = $buildDir.'/'.$versionName.'.json';
                             $key = $versionName.'.json';
-                            $this->dumpVersionToIndividualFile($version, $file, $key);
+                            $this->dumpVersionToIndividualFile($version, $file, $key, $versionData);
                             $modifiedIndividualFiles[$key] = true;
                             $affectedFiles[$key] = true;
                         }
@@ -239,9 +249,7 @@ class SymlinkDumper
                     $this->fs->mkdir(dirname($buildDir.'/'.$name));
                     $this->writeFile($buildDir.'/'.$name.'.files', json_encode(array_keys($affectedFiles)));
 
-                    // update dump date
-                    $package->setDumpedAt($dumpTime);
-                    $this->doctrine->getManager()->flush($package);
+                    $dumpTimeUpdates[$dumpTime->format('Y-m-d H:i:s')][] = $package->getId();
                 }
 
                 unset($packages, $package, $version);
@@ -290,7 +298,7 @@ class SymlinkDumper
             $this->rootFile['notify'] = str_replace('VND/PKG', '%package%', $url);
             $this->rootFile['notify-batch'] = $this->router->generate('track_download_batch');
             $this->rootFile['providers-url'] = $this->router->generate('home') . 'p/%package%$%hash%.json';
-            $this->rootFile['search'] = $this->router->generate('search', array('_format' => 'json')) . '?q=%query%';
+            $this->rootFile['search'] = $this->router->generate('search', array('_format' => 'json')) . '?q=%query%&type=%type%';
 
             if ($verbose) {
                 echo 'Dumping individual listings'.PHP_EOL;
@@ -398,6 +406,32 @@ class SymlinkDumper
             $this->cleanOldFiles($buildDir, $oldBuildDir, $safeFiles);
         }
 
+        if ($verbose) {
+            echo 'Updating package dump times'.PHP_EOL;
+        }
+        foreach ($dumpTimeUpdates as $dt => $ids) {
+            $retries = 5;
+            // retry loop in case of a lock timeout
+            while ($retries--) {
+                try {
+                    $this->doctrine->getManager()->getConnection()->executeQuery(
+                        'UPDATE package SET dumpedAt=:dumped WHERE id IN (:ids)',
+                        [
+                            'ids' => $ids,
+                            'dumped' => $dt,
+                        ],
+                        ['ids' => Connection::PARAM_INT_ARRAY]
+                    );
+                } catch (\Exception $e) {
+                    if (!$retries) {
+                        throw $e;
+                    }
+                    sleep(2);
+                }
+            }
+        }
+
+        // TODO when a package is deleted, it should be removed from provider files, or marked for removal at least
         return true;
     }
 
@@ -410,9 +444,11 @@ class SymlinkDumper
             unlink($newLink);
         }
         if (!symlink($buildDir, $newLink)) {
+            echo 'Warning: Could not symlink the build dir into the web dir';
             throw new \RuntimeException('Could not symlink the build dir into the web dir');
         }
         if (!rename($newLink, $oldLink)) {
+            echo 'Warning: Could not replace the old symlink with the new one in the web dir';
             throw new \RuntimeException('Could not replace the old symlink with the new one in the web dir');
         }
     }
@@ -575,10 +611,10 @@ class SymlinkDumper
         $this->writeFile($hashedFile, $json);
     }
 
-    private function dumpVersionToIndividualFile(Version $version, $file, $key)
+    private function dumpVersionToIndividualFile(Version $version, $file, $key, $versionData)
     {
         $this->loadIndividualFile($file, $key);
-        $data = $version->toArray();
+        $data = $version->toArray($versionData);
         $data['uid'] = $version->getId();
         $this->individualFiles[$key]['packages'][strtolower($version->getName())][$version->getVersion()] = $data;
         $timestamp = $version->getReleasedAt() ? $version->getReleasedAt()->getTimestamp() : time();
