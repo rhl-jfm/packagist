@@ -1,10 +1,10 @@
 {
     "_readme": [
         "This file locks the dependencies of your project to a known state",
-        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "6e3fe09787ae05bb8046888d99c5bf9c",
+    "content-hash": "945b123b80ee5deb92bb69d474e33aab",
     "packages": [
         {
             "name": "cebe/markdown",
@@ -126,16 +126,16 @@
         },
         {
             "name": "composer/composer",
-            "version": "dev-master",
+            "version": "1.6.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/composer/composer.git",
-                "reference": "82c27a68bc5cb76f3d00b82c27496e3cdbb6d4ff"
+                "reference": "87f845d1c14aa22819c51b367ad7e07823f2e2ec"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/composer/composer/zipball/82c27a68bc5cb76f3d00b82c27496e3cdbb6d4ff",
-                "reference": "82c27a68bc5cb76f3d00b82c27496e3cdbb6d4ff",
+                "url": "https://api.github.com/repos/composer/composer/zipball/87f845d1c14aa22819c51b367ad7e07823f2e2ec",
+                "reference": "87f845d1c14aa22819c51b367ad7e07823f2e2ec",
                 "shasum": ""
             },
             "require": {
@@ -148,13 +148,13 @@
                 "seld/cli-prompt": "^1.0",
                 "seld/jsonlint": "^1.4",
                 "seld/phar-utils": "^1.0",
-                "symfony/console": "^2.7 || ^3.0",
-                "symfony/filesystem": "^2.7 || ^3.0",
-                "symfony/finder": "^2.7 || ^3.0",
-                "symfony/process": "^2.7 || ^3.0"
+                "symfony/console": "^2.7 || ^3.0 || ^4.0",
+                "symfony/filesystem": "^2.7 || ^3.0 || ^4.0",
+                "symfony/finder": "^2.7 || ^3.0 || ^4.0",
+                "symfony/process": "^2.7 || ^3.0 || ^4.0"
             },
             "require-dev": {
-                "phpunit/phpunit": "^4.5 || ^5.0.5",
+                "phpunit/phpunit": "^4.8.35 || ^5.7",
                 "phpunit/phpunit-mock-objects": "^2.3 || ^3.0"
             },
             "suggest": {
@@ -199,7 +199,7 @@
                 "dependency",
                 "package"
             ],
-            "time": "2017-08-09T14:23:46+00:00"
+            "time": "2018-01-04T11:03:23+00:00"
         },
         {
             "name": "composer/semver",
@@ -1048,12 +1048,12 @@
             "version": "v2.5.4",
             "source": {
                 "type": "git",
-                "url": "https://github.com/doctrine/doctrine2.git",
+                "url": "https://github.com/doctrine/orm.git",
                 "reference": "bc4ddbfb0114cb33438cc811c9a740d8aa304aab"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/doctrine/doctrine2/zipball/bc4ddbfb0114cb33438cc811c9a740d8aa304aab",
+                "url": "https://api.github.com/repos/doctrine/orm/zipball/bc4ddbfb0114cb33438cc811c9a740d8aa304aab",
                 "reference": "bc4ddbfb0114cb33438cc811c9a740d8aa304aab",
                 "shasum": ""
             },
@@ -4389,6 +4389,7 @@
                 "version",
                 "zf2"
             ],
+            "abandoned": "ocramius/package-versions",
             "time": "2015-06-04T15:41:05+00:00"
         }
     ],
@@ -5646,7 +5647,6 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
-        "composer/composer": 20,
         "friendsofsymfony/user-bundle": 20
     },
     "prefer-stable": false,
