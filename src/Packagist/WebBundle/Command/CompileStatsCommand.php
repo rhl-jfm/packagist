@@ -130,7 +130,7 @@ class CompileStatsCommand extends ContainerAwareCommand
             $trendiness = $this->sumLastNDays(7, $id, $yesterday);
 
             $redis->zadd('downloads:trending:new', $trendiness, $id);
-            $redis->zadd('downloads:absolute:new', $redis->get('dl:'.$id), $id);
+            $redis->zadd('downloads:absolute:new', $redis->get('dl:'.$id) ?? 0, $id);
         }
 
         $redis->rename('downloads:trending:new', 'downloads:trending');
